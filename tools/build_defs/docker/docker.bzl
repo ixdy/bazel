@@ -276,6 +276,7 @@ def _create_image(ctx, layers, id, config, name, metadata):
       "--output=" + ctx.outputs.layer.path,
       "--id=@" + id.path,
       "--config=" + config.path,
+      "--repository=" + _repository_name(ctx),
       ]
 
   args += ["--layer=@%s=%s" % (l["name"].path, l["layer"].path) for l in layers]
@@ -288,6 +289,21 @@ def _create_image(ctx, layers, id, config, name, metadata):
   if metadata:
     args += ["--metadata=" + metadata.path]
     inputs += [metadata]
+
+  # Add image tags if provided.
+  image_tag_file_dict = dict()
+  for i in range(len(ctx.files.image_tag_files)):
+    fname = ctx.attr.image_tag_file_strings[i]
+    file = ctx.files.image_tag_files[i]
+    image_tag_file_dict[fname] = file
+
+  for tag in ctx.attr.image_tags:
+    if tag[0] == '@':
+      tag = "@" + image_tag_file_dict[tag[1:]].path
+    args += ["--tag=" + tag]
+
+  if ctx.attr.image_tag_files:
+    inputs += ctx.files.image_tag_files
 
   # If we have been provided a base image, add it.
   if ctx.attr.base and not hasattr(ctx.attr.base, "docker_layers"):
@@ -328,6 +344,8 @@ def _assemble_image(ctx, layers, name):
 
 def _repository_name(ctx):
   """Compute the repository name for the current rule."""
+  if not ctx.attr.repository_append_package:
+    return ctx.attr.repository
   if ctx.attr.legacy_repository_naming:
     # Legacy behavior, off by default.
     return "%s/%s" % (ctx.attr.repository, ctx.label.package.replace("/", "_"))
@@ -417,10 +435,15 @@ docker_build_ = rule(
         "volumes": attr.string_list(),
         "workdir": attr.string(),
         "repository": attr.string(default="bazel"),
+        "repository_append_package": attr.bool(default=True),
+        "image_tags": attr.string_list(),
         # Implicit dependencies.
         "label_files": attr.label_list(
             allow_files=True),
         "label_file_strings": attr.string_list(),
+        "image_tag_files": attr.label_list(
+            allow_files=True),
+        "image_tag_file_strings": attr.string_list(),
         "build_layer": attr.label(
             default=Label("//tools/build_defs/pkg:build_tar"),
             cfg="host",
@@ -563,13 +586,17 @@ def docker_build(**kwargs):
   """
   if "cmd" in kwargs:
     kwargs["cmd"] = _validate_command("cmd", kwargs["cmd"])
-  for reserved in ["label_files", "label_file_strings"]:
+  for reserved in ["label_files", "label_file_strings", "image_tag_files", "image_tag_file_strings"]:
     if reserved in kwargs:
       fail("reserved for internal use by docker_build macro", attr=reserved)
   if "labels" in kwargs:
     files = sorted(set([v[1:] for v in kwargs["labels"].values() if v[0] == '@']))
     kwargs["label_files"] = files
     kwargs["label_file_strings"] = files
+  if "image_tags" in kwargs:
+    files = sorted(set([v[1:] for v in kwargs["image_tags"] if v[0] == '@']))
+    kwargs["image_tag_files"] = files
+    kwargs["image_tag_file_strings"] = files
   if "entrypoint" in kwargs:
     kwargs["entrypoint"] = _validate_command("entrypoint", kwargs["entrypoint"])
   docker_build_(**kwargs)

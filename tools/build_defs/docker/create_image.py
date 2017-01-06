@@ -63,7 +63,7 @@ gflags.DEFINE_string(
     'name', None,
     'The symbolic name of this image.')
 
-gflags.DEFINE_multistring('tag', None,
+gflags.DEFINE_multistring('tag', [],
                           'The repository tags to apply to the image')
 
 FLAGS = gflags.FLAGS
@@ -155,10 +155,13 @@ def create_image(output,
   manifest_item = {
       'Config': config_file_name,
       'Layers': base_layer_file_names + layer_file_names,
-      'RepoTags': tags or []
   }
   if parent:
     manifest_item['Parent'] = 'sha256:' + parent
+
+  if repository and tags:
+    manifest_item['RepoTags'] = [
+        '%s:%s' % (repository, t) for t in tags]
 
   manifest = [manifest_item]
 
@@ -205,7 +208,15 @@ def main(unused_argv):
         'layer': v,
     })
 
-  create_image(FLAGS.output, identifier, layers, FLAGS.config, FLAGS.tag,
+  tags = []
+  for tag in FLAGS.tag:
+    if tag.startswith('@'):
+      with open(tag[1:], 'r') as f:
+        tags.append(f.read())
+    else:
+      tags.append(tag)
+
+  create_image(FLAGS.output, identifier, layers, FLAGS.config, tags,
                FLAGS.base, FLAGS.legacy_base, legacy_id, FLAGS.metadata,
                FLAGS.name, FLAGS.repository)
 
