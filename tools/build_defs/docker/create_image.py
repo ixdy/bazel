@@ -212,7 +212,7 @@ def main(unused_argv):
   for tag in FLAGS.tag:
     if tag.startswith('@'):
       with open(tag[1:], 'r') as f:
-        tags.append(f.read())
+        tags.append(f.read().strip())
     else:
       tags.append(tag)
 
